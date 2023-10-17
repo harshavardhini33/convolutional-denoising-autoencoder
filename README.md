@@ -36,163 +36,154 @@ Pass test data for validating manually.
 ### STEP 6:
 Plot the predictions for visualization.
 
-## PROGRAM
+## PROGRAM:
 
-``` python
-
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras import utils
-from tensorflow.keras import models
-from tensorflow.keras.datasets import mnist
-import numpy as np
+### Libraries:
+python
 import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+from tensorflow.keras.preprocessing import sequence
+from sklearn.model_selection import train_test_split
+from keras import layers
+from keras.models import Model
 
-(x_train, _), (x_test, _) = mnist.load_data()
 
-x_train.shape
+### Reading, Pre-processing Data:
+python
+data = pd.read_csv("ner_dataset.csv", encoding="latin1")
+data.head(35)
+data = data.fillna(method="ffill")
+data.head(35)
 
-(60000, 28, 28)
+print("Unique words in corpus:", data['Word'].nunique())
+print("Unique tags in corpus:", data['Tag'].nunique())
 
-x_train_scaled = x_train.astype('float32') / 255.
-x_test_scaled = x_test.astype('float32') / 255.
-x_train_scaled = np.reshape(x_train_scaled, (len(x_train_scaled), 28, 28, 1))
-x_test_scaled = np.reshape(x_test_scaled, (len(x_test_scaled), 28, 28, 1))
+words=list(data['Word'].unique())
+words.append("ENDPAD")
+tags=list(data['Tag'].unique())
 
-noise_factor = 0.5
-x_train_noisy = x_train_scaled + noise_factor * np.random.normal(loc=0.0, scale=1.0, size=x_train_scaled.shape) 
-x_test_noisy = x_test_scaled + noise_factor * np.random.normal(loc=0.0, scale=1.0, size=x_test_scaled.shape) 
+print("Unique tags are:", tags)
+num_words = len(words)
+num_tags = len(tags)
+num_words
+num_tags
 
-x_train_noisy = np.clip(x_train_noisy, 0., 1.)
-x_train_noisy = np.clip(x_train_noisy, 0., 1.)
-x_test_noisy = np.clip(x_test_noisy, 0., 1.)
+### Defining a Class to get sentence:
+python
+class SentenceGetter(object):
+    def __init__(self, data):
+        self.n_sent = 1
+        self.data = data
+        self.empty = False
+        agg_func = lambda s: [(w, p, t) for w, p, t in zip(s["Word"].values.tolist(),
+                                                           s["POS"].values.tolist(),
+                                                           s["Tag"].values.tolist())]
+        self.grouped = self.data.groupby("Sentence #").apply(agg_func)
+        self.sentences = [s for s in self.grouped]
 
-n = 10
-plt.figure(figsize=(20, 2))
-for i in range(1, n + 1):
-    ax = plt.subplot(1, n, i)
-    plt.imshow(x_test_noisy[i].reshape(28, 28))
-    plt.gray()
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
+    def get_next(self):
+        try:
+            s = self.grouped["Sentence: {}".format(self.n_sent)]
+            self.n_sent += 1
+            return s
+        except:
+            return None
+
+getter = SentenceGetter(data)
+sentences = getter.sentences
+
+len(sentences)
+
+word2idx = {w: i + 1 for i, w in enumerate(words)}
+tag2idx = {t: i for i, t in enumerate(tags)}
+
+plt.hist([len(s) for s in sentences], bins=50)
 plt.show()
 
-input_img = keras.Input(shape=(28, 28, 1))
-x=layers.Conv2D(16,(3,3),padding='same',activation='relu')(input_img)
-x=layers.MaxPooling2D((2,2),padding='same')(x)
-x=layers.Conv2D(8,(3,3),padding='same',activation='relu')(x)
-x=layers.MaxPooling2D((2,2),padding='same')(x)
-x=layers.Conv2D(4,(3,3),padding='same',activation='relu')(x)
-x=layers.MaxPooling2D((2,2),padding='same')(x)
-x=layers.Conv2D(4,(3,3),padding='same',activation='relu')(x)
-encoder_layer=layers.MaxPooling2D((2,2),padding='same')(x)
+X1 = [[word2idx[w[0]] for w in s] for s in sentences]
+type(X1[0])
+X1[0]
 
-x=layers.Conv2D(8,(3,3),padding='same',activation='relu')(encoder_layer)
-x=layers.UpSampling2D((2,2))(x)
-x=layers.Conv2D(8,(3,3),padding='same',activation='relu')(x)
-x=layers.UpSampling2D((2,2))(x)
-x=layers.Conv2D(8,(3,3),padding='same',activation='relu')(x)
-x=layers.UpSampling2D((2,2))(x)
-x=layers.Conv2D(8,(3,3),padding='same',activation='relu')(x)
-x=layers.UpSampling2D((2,2))(x)
-x=layers.Conv2D(8,(5,5),activation='relu')(x)
-x=layers.UpSampling2D((1,1))(x)
-decoded = layers.Conv2D(1, (3, 3), activation='sigmoid', padding='same')(x)
-autoencoder = keras.Model(input_img, decoded)
-
-autoencoder.summary()
-
-Model: "model"
-_________________________________________________________________
- Layer (type)                Output Shape              Param #   
-=================================================================
- input_2 (InputLayer)        [(None, 28, 28, 1)]       0         
-                                                                 
- conv2d_3 (Conv2D)           (None, 28, 28, 32)        320       
-                                                                 
- max_pooling2d_2 (MaxPooling  (None, 14, 14, 32)       0         
- 2D)                                                             
-                                                                 
- conv2d_4 (Conv2D)           (None, 14, 14, 32)        9248      
-                                                                 
- max_pooling2d_3 (MaxPooling  (None, 7, 7, 32)         0         
- 2D)                                                             
-                                                                 
- conv2d_5 (Conv2D)           (None, 7, 7, 32)          9248      
-                                                                 
- up_sampling2d (UpSampling2D  (None, 14, 14, 32)       0         
- )                                                               
-                                                                 
- conv2d_6 (Conv2D)           (None, 14, 14, 32)        9248      
-                                                                 
- up_sampling2d_1 (UpSampling  (None, 28, 28, 32)       0         
- 2D)                                                             
-                                                                 
- conv2d_7 (Conv2D)           (None, 28, 28, 1)         289       
-                                                                 
-=================================================================
-Total params: 28,353
-Trainable params: 28,353
-Non-trainable params: 0
-_________________________________________________________________
-
-autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
-
-autoencoder.fit(x_train_noisy, x_train_scaled,
-                epochs=2,
-                batch_size=128,
-                shuffle=True,
-                validation_data=(x_test_noisy, x_test_scaled))
-
-Epoch 1/2
-469/469 [==============================] - 153s 324ms/step - loss: 0.1643 - val_loss: 0.1186
-Epoch 2/2
-469/469 [==============================] - 147s 313ms/step - loss: 0.1148 - val_loss: 0.1103
-
-decoded_imgs = autoencoder.predict(x_test_noisy)
-
-313/313 [==============================] - 6s 20ms/step
-
-n = 10
-plt.figure(figsize=(20, 4))
-for i in range(1, n + 1):
-    # Display original
-    ax = plt.subplot(3, n, i)
-    plt.imshow(x_test_scaled[i].reshape(28, 28))
-    plt.gray()
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
-
-    # Display noisy
-    ax = plt.subplot(3, n, i+n)
-    plt.imshow(x_test_noisy[i].reshape(28, 28))
-    plt.gray()
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)    
-
-    # Display reconstruction
-    ax = plt.subplot(3, n, i + 2*n)
-    plt.imshow(decoded_imgs[i].reshape(28, 28))
-    plt.gray()
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
-plt.show()
-```
-
-## OUTPUT
-
-### Training Loss, Validation Loss Vs Iteration Plot
-![238985896-9c7e3c41-7c3f-4efa-a201-0fa8ae7d66e0](https://github.com/harshavardhini33/convolutional-denoising-autoencoder/assets/93427208/a17c89c3-7b02-484a-a5ef-4118041d7dc8)
-
-### Model Summary
-![238986078-7e32f619-a652-4b56-aab5-af5b34457ac6](https://github.com/harshavardhini33/convolutional-denoising-autoencoder/assets/93427208/4f04b8a3-863a-4f81-9279-04d67dd6ff17)
+max_len = 50
 
 
-### Original vs Noisy Vs Reconstructed Image
+### Padding:
+python
+X = sequence.pad_sequences(maxlen=max_len,
+                  sequences=X1, padding="post",
+                  value=num_words-1)
 
-![238985873-45cf671b-5cc4-4b80-98f1-67a0940adc45](https://github.com/harshavardhini33/convolutional-denoising-autoencoder/assets/93427208/c1b4feaf-29aa-4b84-8f51-3ab02d74aac5)
+y1 = [[tag2idx[w[2]] for w in s] for s in sentences]
+
+y = sequence.pad_sequences(maxlen=max_len,
+                  sequences=y1,
+                  padding="post",
+                  value=tag2idx["O"])
+
+X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                                    test_size=0.2, random_state=1)
 
 
+### LSTM Model:
+python
+input_word = layers.Input(shape=(max_len,))
+embedding_layer = layers.Embedding(input_dim = num_words,
+                                   output_dim = 50,
+                                   input_length = max_len)(input_word)
+dropout_layer = layers.SpatialDropout1D(0.13)(embedding_layer)
+bidirectional_lstm = layers.Bidirectional(layers.LSTM(
+    units=250, return_sequences=True,recurrent_dropout=0.13))(dropout_layer)
+output = layers.TimeDistributed(
+    layers.Dense(num_tags, activation="softmax"))(bidirectional_lstm)
+model = Model(input_word, output)
 
-## RESULT
-Thus we have successfully developed a convolutional autoencoder for image denoising application.
+model.summary()
+
+model.compile(optimizer="adam",
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+
+history = model.fit(
+    x=X_train,
+    y=y_train,
+    validation_data=(X_test,y_test),
+    batch_size=45,
+    epochs=3,)
+
+### Metrics:
+python
+metrics = pd.DataFrame(model.history.history)
+metrics.head()
+
+metrics[['accuracy','val_accuracy']].plot()
+
+metrics[['loss','val_loss']].plot()
+
+### Prediction:
+python
+i = 20
+p = model.predict(np.array([X_test[i]]))
+p = np.argmax(p, axis=-1)
+y_true = y_test[i]
+print("{:15}{:5}\t {}\n".format("Word", "True", "Pred"))
+print("-" *30)
+for w, true, pred in zip(X_test[i], y_true, p[0]):
+    print("{:15}{}\t{}".format(words[w-1], tags[true], tags[pred]))
+
+
+## OUTPUT:
+
+### Training Loss, Validation Loss Vs Iteration Plot:
+
+![image](https://github.com/Aashima02/named-entity-recognition/assets/93427086/f3b93925-9723-4d4c-b94a-75a13d4829e5)
+
+### Accuracy, Validation Accuracy Vs Iteration Plot:
+![image](https://github.com/Aashima02/named-entity-recognition/assets/93427086/ffe712a3-66a7-44c1-b176-111cd8d8c7c6)
+
+### Sample Text Prediction
+![image](https://github.com/Aashima02/named-entity-recognition/assets/93427086/15d50d56-9c4c-4326-bb82-5fc0b381b7f8)
+
+
+## RESULT:
+Thus, an LSTM-based model for recognizing the named entities in the text is successfully developed.
